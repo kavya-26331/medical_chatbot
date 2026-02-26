@@ -3,7 +3,15 @@ from .utils import chunk_text
 
 class RAG:
     def __init__(self):
-        self.vectorstore = VectorStore()
+        # Lazy initialization - VectorStore will be created on first use
+        self._vectorstore = None
+
+    @property
+    def vectorstore(self):
+        """Lazy load VectorStore only when accessed."""
+        if self._vectorstore is None:
+            self._vectorstore = VectorStore()
+        return self._vectorstore
 
     def ingest_document(self, text: str, source_name: str):
         """
@@ -13,7 +21,7 @@ class RAG:
         for chunk in chunks:
             self.vectorstore.add_document(chunk, {"source": source_name})
 
-    def retrieve_context(self, query: str, n_results: int = 20):
+    def retrieve_context(self, query: str, n_results: int = 5):
         """
         Retrieve relevant context and sources from vector store based on query.
         """
