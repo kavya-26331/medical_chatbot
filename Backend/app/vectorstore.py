@@ -14,55 +14,71 @@ class VectorStore:
         logger.info(f"ChromaDB path: {chroma_path}")
         
         self.client = chromadb.PersistentClient(path=chroma_path)
+        
+        # Use Groq as the embedding function for ChromaDB
+        embed_model_name = os.getenv("EMBEDDING_MODEL", "llama-3.1-8b-instant")
+        logger.info(f"Loading embedding model: {embed_model_name}")
+        
+        # Configure Groq API
+        self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.embed_model_name = embed_model_name
+        
+        # Create a custom embedding function for Groq
+        self.embedding_fn = self._create_groq_embedding_function()
+        
+        # Delete existing collection if it exists (to avoid the old embedding function issue)
+        try:
+            self.client.delete_collection(name="medical_docs")
+            logger.info("Deleted existing collection to avoid embedding function conflict")
+        except:
+            pass
+        
         self.collection = self.client.get_or_create_collection(
             name="medical_docs",
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=self.embedding_fn
         )
-        logger.info("ChromaDB collection initialized")
-        
-        # Initialize Groq client for embeddings
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            logger.error("GROQ_API_KEY not found in environment variables")
-            raise ValueError("GROQ_API_KEY not found in environment variables.")
-        logger.info("Groq client initialized for embeddings")
-        self.groq_client = Groq(api_key=api_key)
+        logger.info("ChromaDB collection initialized with Groq embedding")
 
-    def _get_embedding(self, text: str) -> list:
-        """Get embedding using Groq's embeddings API."""
-        logger.info(f"Getting embedding for text of length: {len(text)}")
-        try:
-            response = self.groq_client.embeddings.create(
-                model="embed-multilingual-v3-mqa",
-                input=text,
-                timeout=30  # 30 second timeout to prevent hanging
-            )
-            logger.info("Embedding received successfully")
-            return response.data[0].embedding
-        except Exception as e:
-            logger.error(f"Error getting embedding: {type(e).__name__}: {str(e)}")
-            raise
+    def _create_groq_embedding_function(self):
+        """
+        Create a custom embedding function for Groq API.
+        """
+        def groq_embedding_function(input_texts: list) -> list:
+            """
+            Embed texts using Groq's embedding API.
+            """
+            embeddings = []
+            for text in input_texts:
+                response = self.groq_client.embeddings(
+                    model=self.embed_model_name,
+                    input=text
+                )
+                embedding = response.data[0].embedding
+                embeddings.append(embedding)
+            return embeddings
+        
+        return groq_embedding_function
 
     def add_document(self, text: str, metadata: dict):
         logger.info(f"Adding document, text length: {len(text)}, metadata: {metadata}")
-        embedding = self._get_embedding(text)
 
         # FIX: Always unique ID — prevents overwrite
         doc_id = str(uuid.uuid4())
         logger.info(f"Generated document ID: {doc_id}")
 
+        # Let ChromaDB handle embeddings automatically via embedding_function
         self.collection.add(
             documents=[text],
-            embeddings=[embedding],
             metadatas=[metadata],
             ids=[doc_id]
         )
         logger.info("Document added to collection successfully")
 
     def search(self, query: str, n_results: int = 10):
-        query_embedding = self._get_embedding(query)
+        # Let ChromaDB handle query embedding automatically via embedding_function
         results = self.collection.query(
-            query_embeddings=[query_embedding],
+            query_texts=[query],
             n_results=n_results,
             include=["documents", "metadatas"]
         )
@@ -85,5 +101,3 @@ class VectorStore:
             "sources": list(source_counts.keys()),
             "counts": source_counts
         }
-
-

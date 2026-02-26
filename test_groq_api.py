@@ -6,8 +6,8 @@ from pathlib import Path
 from groq import Groq
 from dotenv import load_dotenv
 
-# Load environment variables
-BASE_DIR = Path(__file__).resolve().parent
+# Load environment variables from Backend folder
+BASE_DIR = Path(__file__).resolve().parent / "Backend"
 load_dotenv(dotenv_path=BASE_DIR / ".env", override=True)
 
 # Get API key
