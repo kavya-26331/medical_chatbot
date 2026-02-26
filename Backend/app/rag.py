@@ -1,5 +1,5 @@
-from app.vectorstore import VectorStore
-from app.utils import chunk_text
+from .vectorstore import VectorStore
+from .utils import chunk_text
 
 class RAG:
     def __init__(self):

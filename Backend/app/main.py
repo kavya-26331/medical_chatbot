@@ -1,8 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from app.llm import LLM
-from app.rag import RAG
-from app.schemas import ChatRequest, ChatResponse, UploadResponse
+from .llm import LLM
+from .rag import RAG
+from .schemas import ChatRequest, ChatResponse, UploadResponse
 
 app = FastAPI()
 llm = LLM()
