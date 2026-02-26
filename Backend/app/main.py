@@ -1,5 +1,6 @@
 import os
 import sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from .llm import LLM
@@ -9,11 +10,23 @@ from .rag import RAG
 print(f"Python version: {sys.version}")
 print(f"PORT environment variable: {os.getenv('PORT', 'NOT SET')}")
 
-app = FastAPI(title="Medical Chatbot API")
-
 # Lazy initialization to reduce memory usage at startup
 _llm = None
 _rag = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup/shutdown events."""
+    # Startup - nothing heavy here to avoid OOM at startup
+    print("Application starting up...")
+    yield
+    # Shutdown - cleanup resources
+    global _llm, _rag
+    _llm = None
+    _rag = None
+    print("Application shutting down...")
+
+app = FastAPI(title="Medical Chatbot API", lifespan=lifespan)
 
 def get_llm():
     global _llm
