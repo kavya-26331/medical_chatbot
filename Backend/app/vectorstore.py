@@ -2,35 +2,54 @@ import chromadb
 from groq import Groq
 import os
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 class VectorStore:
 
     def __init__(self):
-        self.client = chromadb.PersistentClient(path="./chroma_db")
+        logger.info("Initializing VectorStore...")
+        chroma_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+        logger.info(f"ChromaDB path: {chroma_path}")
+        
+        self.client = chromadb.PersistentClient(path=chroma_path)
         self.collection = self.client.get_or_create_collection(
             name="medical_docs",
             metadata={"hnsw:space": "cosine"}
         )
+        logger.info("ChromaDB collection initialized")
+        
         # Initialize Groq client for embeddings
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
+            logger.error("GROQ_API_KEY not found in environment variables")
             raise ValueError("GROQ_API_KEY not found in environment variables.")
+        logger.info("Groq client initialized for embeddings")
         self.groq_client = Groq(api_key=api_key)
 
     def _get_embedding(self, text: str) -> list:
         """Get embedding using Groq's embeddings API."""
-        response = self.groq_client.embeddings.create(
-            model="embed-multilingual-v3-mqa",
-            input=text,
-            timeout=30  # 30 second timeout to prevent hanging
-        )
-        return response.data[0].embedding
+        logger.info(f"Getting embedding for text of length: {len(text)}")
+        try:
+            response = self.groq_client.embeddings.create(
+                model="embed-multilingual-v3-mqa",
+                input=text,
+                timeout=30  # 30 second timeout to prevent hanging
+            )
+            logger.info("Embedding received successfully")
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Error getting embedding: {type(e).__name__}: {str(e)}")
+            raise
 
     def add_document(self, text: str, metadata: dict):
+        logger.info(f"Adding document, text length: {len(text)}, metadata: {metadata}")
         embedding = self._get_embedding(text)
 
         # FIX: Always unique ID — prevents overwrite
         doc_id = str(uuid.uuid4())
+        logger.info(f"Generated document ID: {doc_id}")
 
         self.collection.add(
             documents=[text],
@@ -38,6 +57,7 @@ class VectorStore:
             metadatas=[metadata],
             ids=[doc_id]
         )
+        logger.info("Document added to collection successfully")
 
     def search(self, query: str, n_results: int = 10):
         query_embedding = self._get_embedding(query)

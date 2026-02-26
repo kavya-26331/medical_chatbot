@@ -1,10 +1,15 @@
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from .llm import LLM
 from .rag import RAG
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Print startup info for debugging
 print(f"Python version: {sys.version}")
@@ -70,24 +75,42 @@ async def upload_doc(
     file: UploadFile = File(...),
     source_name: str = Form(...)
 ):
-    content = await file.read()
+    try:
+        logger.info(f"Starting ingestion for file: {source_name}")
+        
+        content = await file.read()
+        logger.info(f"File read successfully, size: {len(content)} bytes")
 
-    # Try to decode with UTF-8 first, fallback to other encodings if it fails
-    encodings_to_try = ["utf-8", "windows-1252", "iso-8859-1", "latin1"]
-    text = None
-    for encoding in encodings_to_try:
-        try:
-            text = content.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
+        # Try to decode with UTF-8 first, fallback to other encodings if it fails
+        encodings_to_try = ["utf-8", "windows-1252", "iso-8859-1", "latin1"]
+        text = None
+        for encoding in encodings_to_try:
+            try:
+                text = content.decode(encoding)
+                logger.info(f"Successfully decoded with encoding: {encoding}")
+                break
+            except UnicodeDecodeError:
+                continue
 
-    if text is None:
-        return {"status": "error", "message": "Unable to decode file content with supported encodings"}
+        if text is None:
+            logger.error("Failed to decode file with any supported encoding")
+            return {"status": "error", "message": "Unable to decode file content with supported encodings"}
 
-    get_rag().ingest_document(text, source_name)
+        # Log text preview
+        logger.info(f"Text decoded, length: {len(text)} characters, preview: {text[:100]}...")
 
-    return {"status": "success", "message": f"{source_name} ingested"}
+        # Ingest the document
+        logger.info("Calling get_rag().ingest_document()")
+        get_rag().ingest_document(text, source_name)
+        logger.info(f"Successfully ingested {source_name}")
+
+        return {"status": "success", "message": f"{source_name} ingested"}
+        
+    except Exception as e:
+        logger.error(f"Error during ingestion: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {"status": "error", "message": f"Internal Server Error: {type(e).__name__}: {str(e)}"}
 
 # ------------------------
 #  CHAT ROUTE
