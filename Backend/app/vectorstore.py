@@ -1,5 +1,5 @@
 import chromadb
-from groq import Groq
+from app.embeddings import Embeddings
 import os
 import uuid
 import logging
@@ -20,25 +20,18 @@ class VectorStore:
         )
         logger.info("ChromaDB collection initialized")
         
-        # Initialize Groq client for embeddings
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            logger.error("GROQ_API_KEY not found in environment variables")
-            raise ValueError("GROQ_API_KEY not found in environment variables.")
-        logger.info("Groq client initialized for embeddings")
-        self.groq_client = Groq(api_key=api_key)
+        # Initialize local embeddings model (SentenceTransformer)
+        logger.info("Initializing local embeddings model...")
+        self.embeddings_model = Embeddings()
+        logger.info("Local embeddings model initialized successfully")
 
     def _get_embedding(self, text: str) -> list:
-        """Get embedding using Groq's embeddings API."""
+        """Get embedding using local SentenceTransformer model."""
         logger.info(f"Getting embedding for text of length: {len(text)}")
         try:
-            response = self.groq_client.embeddings.create(
-                model="embed-multilingual-v3-mqa",
-                input=text,
-                timeout=30  # 30 second timeout to prevent hanging
-            )
+            embedding = self.embeddings_model.embed_texts([text])[0]
             logger.info("Embedding received successfully")
-            return response.data[0].embedding
+            return embedding.tolist() if hasattr(embedding, 'tolist') else list(embedding)
         except Exception as e:
             logger.error(f"Error getting embedding: {type(e).__name__}: {str(e)}")
             raise
