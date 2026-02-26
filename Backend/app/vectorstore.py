@@ -1,5 +1,6 @@
 import chromadb
-from sentence_transformers import SentenceTransformer
+from groq import Groq
+import os
 import uuid
 
 class VectorStore:
@@ -10,10 +11,23 @@ class VectorStore:
             name="medical_docs",
             metadata={"hnsw:space": "cosine"}
         )
-        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
+        # Initialize Groq client for embeddings
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not found in environment variables.")
+        self.groq_client = Groq(api_key=api_key)
+
+    def _get_embedding(self, text: str) -> list:
+        """Get embedding using Groq's embeddings API."""
+        response = self.groq_client.embeddings.create(
+            model="embed-multilingual-v3-mqa",
+            input=text,
+            timeout=30  # 30 second timeout to prevent hanging
+        )
+        return response.data[0].embedding
 
     def add_document(self, text: str, metadata: dict):
-        embedding = self.embedder.encode(text).tolist()
+        embedding = self._get_embedding(text)
 
         # FIX: Always unique ID — prevents overwrite
         doc_id = str(uuid.uuid4())
@@ -26,7 +40,7 @@ class VectorStore:
         )
 
     def search(self, query: str, n_results: int = 10):
-        query_embedding = self.embedder.encode(query).tolist()
+        query_embedding = self._get_embedding(query)
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=n_results,

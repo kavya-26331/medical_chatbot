@@ -63,6 +63,7 @@ Answer:
                     ],
                     temperature=0.3,
                     max_tokens=800,
+                    timeout=120,  # Increased to 120 second timeout for complex queries
                 )
 
                 if response and response.choices:
@@ -79,6 +80,12 @@ Answer:
                         "Error: The selected Groq model is no longer supported. "
                         "Please update LLM_MODEL in your .env file."
                     )
+
+                # Handle timeout errors specifically
+                if "timeout" in error_message.lower() or "timed out" in error_message.lower():
+                    if attempt == max_retries - 1:
+                        return "Error: The request timed out. Please try again or reduce your query complexity."
+                    continue  # Skip the sleep and retry immediately for timeouts
 
                 if attempt == max_retries - 1:
                     return f"Error: Failed after multiple attempts. {error_message}"
