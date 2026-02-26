@@ -1,38 +1,89 @@
-import requests
 import os
+import time
+from pathlib import Path
+from groq import Groq
+from dotenv import load_dotenv
+
+
+# Load environment variables with explicit path from Backend folder
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=BASE_DIR / ".env", override=True)
+
 
 class LLM:
     def __init__(self):
-        self.model = os.getenv("LLM_MODEL", "llama3.1")
-        self.api_url = "http://localhost:11434/api/generate"
+        # Load model and API key from environment
+        self.model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+        self.api_key = os.getenv("GROQ_API_KEY")
+
+        # Debug print
+        print("DEBUG - Loaded API Key:", self.api_key)
+        print("DEBUG - Loaded Model:", self.model)
+
+        if not self.api_key:
+            raise ValueError("GROQ_API_KEY not found in environment variables.")
+
+        self.client = Groq(api_key=self.api_key)
 
     def generate_answer(self, query: str, context: str) -> str:
         """
-        Generate an answer using the Ollama API with the provided context.
+        Generate an answer using Groq LLM with medical-safe prompting.
         """
-        # Reduce context to 4000 characters to avoid overloading the model
-        truncated_context = context[:4000] if len(context) > 4000 else context
-        prompt = f"You are a medical assistant. Use the provided context to answer the question accurately and concisely. If the context does not contain relevant information, say 'I don't have enough information to answer this question.' Do not make up information.\n\nContext: {truncated_context}\n\nQuestion: {query}\n\nAnswer:"
-        data = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False
-        }
-        for attempt in range(3):  # Retry up to 3 times
-            try:
-                response = requests.post(self.api_url, json=data, timeout=120)  # Increased timeout to 120 seconds
-                if response.status_code == 200:
-                    result = response.json()
-                    answer = result.get("response", "").strip()
-                    return answer
-                else:
-                    return f"Error: Unable to generate answer. API responded with status {response.status_code}."
-            except requests.exceptions.Timeout:
-                if attempt == 2:  # Last attempt
-                    return "Error: The request to the language model timed out after multiple attempts. Please try again later."
-                continue  # Retry
-            except requests.exceptions.RequestException as e:
-                return f"Error: Failed to connect to the language model service. {str(e)}"
-            except Exception as e:
-                return f"Error: An unexpected error occurred while generating the answer. {str(e)}"
 
+        # Limit context size (avoid token overflow)
+        truncated_context = context[:4000] if context else ""
+
+        prompt = f"""
+You are a professional medical assistant AI.
+
+Instructions:
+- Use ONLY the provided context.
+- Do NOT make up information.
+- If the context does not contain relevant data, say:
+  "I don't have enough information to answer this question."
+- Be accurate and concise.
+
+Context:
+{truncated_context}
+
+Question:
+{query}
+
+Answer:
+"""
+
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=800,
+                )
+
+                if response and response.choices:
+                    return response.choices[0].message.content.strip()
+
+                return "Error: Model returned empty response."
+
+            except Exception as e:
+                error_message = str(e)
+
+                # Specific error handling
+                if "model_decommissioned" in error_message:
+                    return (
+                        "Error: The selected Groq model is no longer supported. "
+                        "Please update LLM_MODEL in your .env file."
+                    )
+
+                if attempt == max_retries - 1:
+                    return f"Error: Failed after multiple attempts. {error_message}"
+
+                # Wait before retrying
+                time.sleep(2)
+
+        return "Error: Unexpected failure."

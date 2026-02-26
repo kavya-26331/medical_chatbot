@@ -1,0 +1,21 @@
+# Virtual Environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables
+.env
+
+# Chroma vector database
+Backend/chroma_db/
+Backend/Backend/chroma_db/
+
+# SQLite
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
