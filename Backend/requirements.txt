@@ -4,6 +4,9 @@ uvicorn
 gunicorn
 python-multipart
 chromadb>=0.5.0
+sentence-transformers
+transformers
+torch
 requests
 groq
 python-dotenv

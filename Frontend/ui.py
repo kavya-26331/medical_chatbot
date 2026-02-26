@@ -162,14 +162,7 @@ if st.button("🚀 Ask AI"):
     else:
         payload = {"query": query}
         with st.spinner("🤖 Thinking..."):
-            try:
-                resp = requests.post(f"{API_URL}/chat", json=payload, timeout=(10, 120))
-            except requests.exceptions.Timeout:
-                st.error("⏱️ The request timed out. Please try again with a shorter question.")
-                st.rerun()
-            except requests.exceptions.ConnectionError:
-                st.error("⚠️ Could not connect to the server. Please check if the backend is running.")
-                st.rerun()
+            resp = requests.post(f"{API_URL}/chat", json=payload, timeout=300)
         if resp.ok:
             res = resp.json()
             st.session_state.messages.append({
