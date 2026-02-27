@@ -9,4 +9,3 @@ requests
 groq
 python-dotenv
 langchain
-sentence-transformers

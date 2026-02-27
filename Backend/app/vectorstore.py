@@ -19,21 +19,10 @@ class VectorStore:
         os.makedirs(chroma_path, exist_ok=True)
         self.client = chromadb.PersistentClient(path=chroma_path)
 
-        # ✅ Use proper ChromaDB embedding class (SentenceTransformer)
-        # This is the CORRECT way to configure embeddings in ChromaDB
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-        logger.info("Using SentenceTransformer embedding function (all-MiniLM-L6-v2)")
-
-        # 🔥 PRE-WARM THE MODEL: Force download/load on startup to avoid cold start issues
-        # This helps on cloud deployments where the model isn't pre-cached
-        try:
-            logger.info("Pre-warming embedding model...")
-            test_embedding = self.embedding_function(["warmup"])
-            logger.info(f"Embedding model warmed up successfully, test embedding shape: {len(test_embedding)}")
-        except Exception as e:
-            logger.warning(f"Model warmup warning (non-fatal): {type(e).__name__}: {str(e)}")
+        # ✅ Use ChromaDB's DefaultEmbeddingFunction (ONNX-optimized, no torch)
+        # This uses all-MiniLM-L6-v2 without heavy torch loading
+        self.embedding_function = embedding_functions.DefaultEmbeddingFunction()
+        logger.info("Using Chroma DefaultEmbeddingFunction (ONNX-optimized all-MiniLM-L6-v2)")
 
         # ✅ Get or create collection WITHOUT deleting existing one
         # This prevents issues with persistent storage on cloud deployments
@@ -42,7 +31,7 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
             embedding_function=self.embedding_function
         )
-        logger.info("ChromaDB collection initialized with SentenceTransformer embedding")
+        logger.info("ChromaDB collection initialized with DefaultEmbeddingFunction")
 
     def add_document(self, text: str, metadata: dict):
         logger.info(f"Adding document, text length: {len(text)}, metadata: {metadata}")
