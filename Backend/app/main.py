@@ -57,6 +57,11 @@ app.add_middleware(
 def root():
     return {"status": "running"}
 
+@app.get("/debug-methods")
+def debug_methods():
+    """Debug endpoint to verify deployment version"""
+    return {"clear_route_method": "POST", "version": "debug-enabled"}
+
 @app.get("/list_sources")
 def list_sources():
     sources = get_rag().vectorstore.list_sources()
@@ -64,21 +69,34 @@ def list_sources():
 
 @app.post("/clear")
 def clear_db():
+    """
+    Clear the vector database by resetting the RAG instance.
+    This is more reliable on Render's ephemeral filesystem.
+    """
     try:
-        logger.info("Attempting to clear vector database...")
-        success = get_rag().vectorstore.clear_collection()
-        if success:
-            logger.info("Vector DB cleared successfully!")
-            return {"status": "success", "message": "Vector DB cleared!"}
-        else:
-            logger.error("Failed to clear vector DB - returned False")
-            return {"status": "error", "message": "Failed to clear vector DB - check server logs"}
+        global _rag
+        print("Resetting RAG instance...")
+        logger.info("Resetting RAG instance to clear vector DB...")
+        
+        # Reset the RAG instance - this will force reinitialization on next use
+        _rag = None
+        print("RAG instance reset to None")
+        
+        logger.info("RAG reset successful!")
+        return {"status": "success", "message": "Vector DB cleared (RAG reset)!"}
+        
     except Exception as e:
-        logger.error(f"Error clearing DB: {type(e).__name__}: {str(e)}")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        # Return detailed error for frontend debugging
-        return {"status": "error", "message": f"Error: {type(e).__name__}: {str(e)}"}
+        error_details = traceback.format_exc()
+        logger.error(f"Error clearing DB: {type(e).__name__}: {str(e)}")
+        logger.error(f"Traceback: {error_details}")
+        return {
+            "status": "error", 
+            "message": f"Error: {type(e).__name__}: {str(e)}",
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "traceback": error_details
+        }
 
 # ------------------------
 #  INGEST ROUTE
