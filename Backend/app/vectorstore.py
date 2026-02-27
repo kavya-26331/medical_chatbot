@@ -26,6 +26,15 @@ class VectorStore:
         )
         logger.info("Using SentenceTransformer embedding function (all-MiniLM-L6-v2)")
 
+        # 🔥 PRE-WARM THE MODEL: Force download/load on startup to avoid cold start issues
+        # This helps on cloud deployments where the model isn't pre-cached
+        try:
+            logger.info("Pre-warming embedding model...")
+            test_embedding = self.embedding_function(["warmup"])
+            logger.info(f"Embedding model warmed up successfully, test embedding shape: {len(test_embedding)}")
+        except Exception as e:
+            logger.warning(f"Model warmup warning (non-fatal): {type(e).__name__}: {str(e)}")
+
         # ✅ Get or create collection WITHOUT deleting existing one
         # This prevents issues with persistent storage on cloud deployments
         self.collection = self.client.get_or_create_collection(
