@@ -16,6 +16,7 @@ class VectorStore:
         chroma_path = os.getenv("CHROMA_DB_PATH", "/tmp/chroma_db")
         logger.info(f"ChromaDB path: {chroma_path}")
 
+        os.makedirs(chroma_path, exist_ok=True)
         self.client = chromadb.PersistentClient(path=chroma_path)
 
         # ✅ Use proper ChromaDB embedding class (SentenceTransformer)
@@ -59,24 +60,30 @@ class VectorStore:
         return results
 
     def clear_collection(self):
-        """Clear all documents from the collection with proper error handling."""
+        """Clear all documents from the collection by deleting and recreating it."""
         try:
-            # Get all document IDs
-            results = self.collection.get()
+            # Delete the entire collection and recreate it fresh
+            # This is more robust than trying to delete individual IDs
+            logger.info("Deleting the entire collection...")
+            self.client.delete_collection(name="medical_docs")
+            logger.info("Collection deleted successfully")
             
-            if results and results.get("ids"):
-                ids_to_delete = results["ids"]
-                logger.info(f"Found {len(ids_to_delete)} documents to delete")
-                self.collection.delete(ids=ids_to_delete)
-                logger.info("Collection cleared successfully")
-                return True
-            else:
-                logger.info("Collection is already empty")
-                return True
+            # Recreate the collection with the same settings
+            logger.info("Recreating collection with fresh state...")
+            self.collection = self.client.get_or_create_collection(
+                name="medical_docs",
+                metadata={"hnsw:space": "cosine"},
+                embedding_function=self.embedding_function
+            )
+            logger.info("Collection recreated successfully with fresh state")
+            return True
                 
         except Exception as e:
             logger.error(f"Error clearing collection: {type(e).__name__}: {str(e)}")
-            # If collection doesn't exist, try to recreate it
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Try to recreate collection as fallback
             try:
                 self.collection = self.client.get_or_create_collection(
                     name="medical_docs",
@@ -87,10 +94,23 @@ class VectorStore:
                 return True
             except Exception as recreate_error:
                 logger.error(f"Failed to recreate collection: {recreate_error}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 return False
 
     def list_sources(self):
         try:
+            # Try to get the collection, if it doesn't exist, create it fresh
+            try:
+                self.collection = self.client.get_collection(name="medical_docs")
+            except Exception:
+                # Collection doesn't exist, create it fresh
+                self.collection = self.client.get_or_create_collection(
+                    name="medical_docs",
+                    metadata={"hnsw:space": "cosine"},
+                    embedding_function=self.embedding_function
+                )
+
             results = self.collection.get(include=["metadatas"])
             source_counts = {}
             if results and "metadatas" in results and results["metadatas"]:
@@ -105,4 +125,6 @@ class VectorStore:
             }
         except Exception as e:
             logger.error(f"Error listing sources: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"sources": [], "counts": {}}
