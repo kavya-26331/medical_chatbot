@@ -4,7 +4,11 @@ import streamlit as st
 import requests
 import os
 
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL")
+
+if not API_URL:
+    st.error("API_URL not configured in Streamlit Secrets.")
+    st.stop()
 
 # Page config
 st.set_page_config(
