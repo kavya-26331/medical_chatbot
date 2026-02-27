@@ -1,5 +1,5 @@
 import chromadb
-from groq import Groq
+from chromadb.utils import embedding_functions
 import os
 import uuid
 import logging
@@ -12,53 +12,29 @@ class VectorStore:
         logger.info("Initializing VectorStore...")
         chroma_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
         logger.info(f"ChromaDB path: {chroma_path}")
-        
+
         self.client = chromadb.PersistentClient(path=chroma_path)
-        
-        # Use Groq as the embedding function for ChromaDB
-        embed_model_name = os.getenv("EMBEDDING_MODEL", "llama-3.1-8b-instant")
-        logger.info(f"Loading embedding model: {embed_model_name}")
-        
-        # Configure Groq API
-        self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        self.embed_model_name = embed_model_name
-        
-        # Create a custom embedding function for Groq
-        self.embedding_fn = self._create_groq_embedding_function()
-        
+
+        # ✅ Use proper ChromaDB embedding class (SentenceTransformer)
+        # This is the CORRECT way to configure embeddings in ChromaDB
+        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+        logger.info("Using SentenceTransformer embedding function (all-MiniLM-L6-v2)")
+
         # Delete existing collection if it exists (to avoid the old embedding function issue)
         try:
             self.client.delete_collection(name="medical_docs")
             logger.info("Deleted existing collection to avoid embedding function conflict")
         except:
             pass
-        
+
         self.collection = self.client.get_or_create_collection(
             name="medical_docs",
             metadata={"hnsw:space": "cosine"},
-            embedding_function=self.embedding_fn
+            embedding_function=self.embedding_function
         )
-        logger.info("ChromaDB collection initialized with Groq embedding")
-
-    def _create_groq_embedding_function(self):
-        """
-        Create a custom embedding function for Groq API.
-        """
-        def groq_embedding_function(input_texts: list) -> list:
-            """
-            Embed texts using Groq's embedding API.
-            """
-            embeddings = []
-            for text in input_texts:
-                response = self.groq_client.embeddings(
-                    model=self.embed_model_name,
-                    input=text
-                )
-                embedding = response.data[0].embedding
-                embeddings.append(embedding)
-            return embeddings
-        
-        return groq_embedding_function
+        logger.info("ChromaDB collection initialized with SentenceTransformer embedding")
 
     def add_document(self, text: str, metadata: dict):
         logger.info(f"Adding document, text length: {len(text)}, metadata: {metadata}")
