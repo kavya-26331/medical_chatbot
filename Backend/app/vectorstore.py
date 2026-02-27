@@ -10,7 +10,10 @@ class VectorStore:
 
     def __init__(self):
         logger.info("Initializing VectorStore...")
-        chroma_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+        
+        # ✅ Use /tmp/chroma_db for cloud deployment compatibility
+        # This works on Streamlit Cloud, Render, and other ephemeral filesystems
+        chroma_path = os.getenv("CHROMA_DB_PATH", "/tmp/chroma_db")
         logger.info(f"ChromaDB path: {chroma_path}")
 
         self.client = chromadb.PersistentClient(path=chroma_path)
@@ -22,13 +25,8 @@ class VectorStore:
         )
         logger.info("Using SentenceTransformer embedding function (all-MiniLM-L6-v2)")
 
-        # Delete existing collection if it exists (to avoid the old embedding function issue)
-        try:
-            self.client.delete_collection(name="medical_docs")
-            logger.info("Deleted existing collection to avoid embedding function conflict")
-        except:
-            pass
-
+        # ✅ Get or create collection WITHOUT deleting existing one
+        # This prevents issues with persistent storage on cloud deployments
         self.collection = self.client.get_or_create_collection(
             name="medical_docs",
             metadata={"hnsw:space": "cosine"},
@@ -61,19 +59,50 @@ class VectorStore:
         return results
 
     def clear_collection(self):
-        results = self.collection.get()
-        if results and results["ids"]:
-            self.collection.delete(ids=results["ids"])
+        """Clear all documents from the collection with proper error handling."""
+        try:
+            # Get all document IDs
+            results = self.collection.get()
+            
+            if results and results.get("ids"):
+                ids_to_delete = results["ids"]
+                logger.info(f"Found {len(ids_to_delete)} documents to delete")
+                self.collection.delete(ids=ids_to_delete)
+                logger.info("Collection cleared successfully")
+                return True
+            else:
+                logger.info("Collection is already empty")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error clearing collection: {type(e).__name__}: {str(e)}")
+            # If collection doesn't exist, try to recreate it
+            try:
+                self.collection = self.client.get_or_create_collection(
+                    name="medical_docs",
+                    metadata={"hnsw:space": "cosine"},
+                    embedding_function=self.embedding_function
+                )
+                logger.info("Recreated collection after clear error")
+                return True
+            except Exception as recreate_error:
+                logger.error(f"Failed to recreate collection: {recreate_error}")
+                return False
 
     def list_sources(self):
-        results = self.collection.get(include=["metadatas"])
-        source_counts = {}
-        if results and "metadatas" in results:
-            for meta in results["metadatas"]:
-                source = meta.get("source", "unknown")
-                source_counts[source] = source_counts.get(source, 0) + 1
+        try:
+            results = self.collection.get(include=["metadatas"])
+            source_counts = {}
+            if results and "metadatas" in results and results["metadatas"]:
+                for meta in results["metadatas"]:
+                    if meta:  # Check if meta is not None
+                        source = meta.get("source", "unknown")
+                        source_counts[source] = source_counts.get(source, 0) + 1
 
-        return {
-            "sources": list(source_counts.keys()),
-            "counts": source_counts
-        }
+            return {
+                "sources": list(source_counts.keys()),
+                "counts": source_counts
+            }
+        except Exception as e:
+            logger.error(f"Error listing sources: {type(e).__name__}: {str(e)}")
+            return {"sources": [], "counts": {}}

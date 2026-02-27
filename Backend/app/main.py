@@ -64,8 +64,17 @@ def list_sources():
 
 @app.post("/clear")
 def clear_db():
-    get_rag().vectorstore.clear_collection()
-    return {"message": "Vector DB cleared!"}
+    try:
+        success = get_rag().vectorstore.clear_collection()
+        if success:
+            return {"status": "success", "message": "Vector DB cleared!"}
+        else:
+            return {"status": "error", "message": "Failed to clear vector DB"}
+    except Exception as e:
+        logger.error(f"Error clearing DB: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {"status": "error", "message": f"Error clearing DB: {type(e).__name__}: {str(e)}"}
 
 # ------------------------
 #  INGEST ROUTE
