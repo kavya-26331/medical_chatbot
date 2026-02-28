@@ -60,7 +60,7 @@ def root():
 @app.get("/debug-methods")
 def debug_methods():
     """Debug endpoint to verify deployment version"""
-    return {"clear_route_method": "POST", "version": "debug-enabled"}
+    return {"clear_route_methods": ["GET", "POST"], "version": "debug-enabled-v2"}
 
 @app.get("/list_sources")
 def list_sources():
@@ -97,6 +97,14 @@ def clear_db():
             "error_message": str(e),
             "traceback": error_details
         }
+
+@app.get("/clear")
+def clear_db_get():
+    """
+    GET endpoint for /clear - convenient for testing in browser.
+    Same functionality as POST /clear but accessible via GET request.
+    """
+    return clear_db()
 
 # ------------------------
 #  INGEST ROUTE
