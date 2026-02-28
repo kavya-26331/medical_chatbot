@@ -7,9 +7,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 class VectorStore:
-    # Class-level model cache for lazy loading
-    _embedding_function = None
-
     def __init__(self):
         logger.info("Initializing VectorStore...")
         try:
@@ -18,37 +15,30 @@ class VectorStore:
             self.client = chromadb.Client()
             logger.info("Using in-memory ChromaDB client (no persistence)")
 
-            # Don't load the embedding model at startup - lazy load it instead
-            self.embedding_function = None
+            # Load embedding function at startup (not lazy!)
+            # Using all-MiniLM-L6-v2 which is smaller, faster and more stable on low RAM
+            logger.info("Loading SentenceTransformer model (all-MiniLM-L6-v2) at startup...")
+            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"  # Smaller model = less RAM, faster loading
+            )
+            logger.info("✅ SentenceTransformer model loaded at startup")
 
-            # Get or create collection
+            # Get or create collection with embedding function
             self.collection = self.client.get_or_create_collection(
                 name="medical_docs",
-                metadata={"hnsw:space": "cosine"}
+                metadata={"hnsw:space": "cosine"},
+                embedding_function=self.embedding_function
             )
-            logger.info("ChromaDB collection initialized (model will load on first use)")
+            logger.info("ChromaDB collection initialized with embedding function")
         except Exception as e:
             logger.error(f"Error initializing VectorStore: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
-    def _get_embedding_function(self):
-        """
-        Lazy load the embedding function only when needed.
-        This prevents memory spike at startup on Render's 512MB limit.
-        """
-        if VectorStore._embedding_function is None:
-            logger.info("Lazy loading SentenceTransformer model (paraphrase-MiniLM-L3-v2)...")
-            VectorStore._embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="paraphrase-MiniLM-L3-v2"  # Lighter model = less RAM
-            )
-            logger.info("✅ SentenceTransformer model loaded and cached")
-        return VectorStore._embedding_function
-
     def _embed_text(self, text: str):
-        """Embed text using the embedding function (lazy loaded)."""
-        return self._get_embedding_function()([text])[0]
+        """Embed text using the embedding function."""
+        return self.embedding_function([text])[0]
 
     def add_document(self, text: str, metadata: dict):
         logger.info(f"Adding document, text length: {len(text)}, metadata: {metadata}")
