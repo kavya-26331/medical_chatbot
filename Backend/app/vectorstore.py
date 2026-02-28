@@ -3,52 +3,52 @@ from chromadb.utils import embedding_functions
 import os
 import uuid
 import logging
-import tempfile
 
 logger = logging.getLogger(__name__)
 
 class VectorStore:
-    # Class-level model cache to avoid reloading
+    # Class-level model cache for lazy loading
     _embedding_function = None
 
     def __init__(self):
         logger.info("Initializing VectorStore...")
         try:
-            # Create a unique path for each instance using PID
-            self.persist_directory = os.path.join(tempfile.gettempdir(), f"chroma_db_{os.getpid()}")
-            logger.info(f"Using ChromaDB path: {self.persist_directory}")
+            # Use in-memory ChromaDB client (no persistence = less memory)
+            # This is the fastest quick fix for Render's 512MB limit
+            self.client = chromadb.Client()
+            logger.info("Using in-memory ChromaDB client (no persistence)")
 
-            # Use PersistentClient for data persistence
-            self.client = chromadb.PersistentClient(path=self.persist_directory)
-            logger.info("Using PersistentClient for ChromaDB")
+            # Don't load the embedding model at startup - lazy load it instead
+            self.embedding_function = None
 
-            # Lazy load the embedding function (class-level cache)
-            if VectorStore._embedding_function is None:
-                logger.info("Loading SentenceTransformer model...")
-                VectorStore._embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-                    model_name="all-MiniLM-L6-v2"
-                )
-                logger.info("✅ SentenceTransformer model loaded and cached")
-            else:
-                logger.info("Using cached SentenceTransformer model")
-            
-            self.embedding_function = VectorStore._embedding_function
-
-            # Get or create collection - DON'T delete at startup
+            # Get or create collection
             self.collection = self.client.get_or_create_collection(
                 name="medical_docs",
                 metadata={"hnsw:space": "cosine"}
             )
-            logger.info("ChromaDB collection initialized")
+            logger.info("ChromaDB collection initialized (model will load on first use)")
         except Exception as e:
             logger.error(f"Error initializing VectorStore: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
+    def _get_embedding_function(self):
+        """
+        Lazy load the embedding function only when needed.
+        This prevents memory spike at startup on Render's 512MB limit.
+        """
+        if VectorStore._embedding_function is None:
+            logger.info("Lazy loading SentenceTransformer model (paraphrase-MiniLM-L3-v2)...")
+            VectorStore._embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="paraphrase-MiniLM-L3-v2"  # Lighter model = less RAM
+            )
+            logger.info("✅ SentenceTransformer model loaded and cached")
+        return VectorStore._embedding_function
+
     def _embed_text(self, text: str):
-        """Embed text using the embedding function."""
-        return self.embedding_function([text])[0]
+        """Embed text using the embedding function (lazy loaded)."""
+        return self._get_embedding_function()([text])[0]
 
     def add_document(self, text: str, metadata: dict):
         logger.info(f"Adding document, text length: {len(text)}, metadata: {metadata}")

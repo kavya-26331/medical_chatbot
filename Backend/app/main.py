@@ -23,7 +23,7 @@ print(f"PORT environment variable: {os.getenv('PORT', 'NOT SET')}")
 os.environ["HF_HOME"] = os.environ.get("HF_HOME", "/tmp/huggingface")
 print(f"HF_HOME set to: {os.environ['HF_HOME']}")
 
-# Global instances - loaded once at startup
+# Global instances - lazy loaded on first request
 _llm = None
 _rag = None
 _vectorstore = None
@@ -31,20 +31,13 @@ _vectorstore = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
-    # Startup - Load vectorstore once at startup (not per request)
-    global _vectorstore, _llm, _rag
-    print("Application starting up...")
-    
-    print("Loading VectorStore at startup (this may take 30-120 seconds)...")
-    _vectorstore = VectorStore()
-    print("VectorStore loaded successfully!")
-    
-    # Pre-initialize RAG with the vectorstore
-    _rag = RAG(vectorstore=_vectorstore)
-    print("RAG initialized with VectorStore")
+    # Startup - DON'T load vectorstore here (causes OOM on Render)
+    # Instead, lazy load on first request
+    print("Application starting up (VectorStore will load on first request)...")
     
     yield
     # Shutdown - cleanup resources
+    global _llm, _rag, _vectorstore
     _llm = None
     _rag = None
     _vectorstore = None
@@ -60,7 +53,9 @@ def get_llm():
 
 def get_rag():
     global _rag
-    # RAG is already initialized at startup, just return it
+    # Lazy load RAG on first request
+    if _rag is None:
+        _rag = RAG(vectorstore=get_vectorstore())
     return _rag
 
 def get_vectorstore():
