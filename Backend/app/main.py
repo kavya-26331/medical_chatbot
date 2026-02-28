@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from .llm import LLM
 from .rag import RAG
+from .vectorstore import VectorStore
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +23,7 @@ print(f"PORT environment variable: {os.getenv('PORT', 'NOT SET')}")
 os.environ["HF_HOME"] = os.environ.get("HF_HOME", "/tmp/huggingface")
 print(f"HF_HOME set to: {os.environ['HF_HOME']}")
 
-# Lazy initialization to reduce memory usage at startup
+# Global instances - loaded once at startup
 _llm = None
 _rag = None
 _vectorstore = None
@@ -30,39 +31,24 @@ _vectorstore = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
+    # Startup - Load vectorstore once at startup (not per request)
     global _vectorstore, _llm, _rag
-    
-    # Startup - Initialize VectorStore ONCE here
-    print("="*50)
     print("Application starting up...")
-    print(f"Time: {datetime.now()}")
-    print("="*50)
-    print("Pre-loading VectorStore and embedding model...")
     
-    try:
-        from .vectorstore import VectorStore
-        _vectorstore = VectorStore()
-        print("✅ VectorStore loaded successfully at startup")
-    except Exception as e:
-        print(f"❌ Error loading VectorStore at startup: {e}")
-        import traceback
-        print(f"Traceback: {traceback.format_exc()}")
+    print("Loading VectorStore at startup (this may take 30-120 seconds)...")
+    _vectorstore = VectorStore()
+    print("VectorStore loaded successfully!")
     
-    try:
-        yield
-    except asyncio.CancelledError:
-        print("Application received cancellation signal...")
-        raise
-    except KeyboardInterrupt:
-        print("Application received keyboard interrupt...")
-        raise
-    finally:
-        # Shutdown - cleanup resources
-        global _llm, _rag
-        _llm = None
-        _rag = None
-        _vectorstore = None
-        print("Application shutting down...")
+    # Pre-initialize RAG with the vectorstore
+    _rag = RAG(vectorstore=_vectorstore)
+    print("RAG initialized with VectorStore")
+    
+    yield
+    # Shutdown - cleanup resources
+    _llm = None
+    _rag = None
+    _vectorstore = None
+    print("Application shutting down...")
 
 app = FastAPI(title="Medical Chatbot API", lifespan=lifespan)
 
@@ -73,14 +59,8 @@ def get_llm():
     return _llm
 
 def get_rag():
-    """Get or create RAG instance with pre-loaded vectorstore."""
-    global _rag, _vectorstore
-    if _rag is None:
-        from .rag import RAG
-        _rag = RAG()
-        # Use the pre-loaded vectorstore
-        if _vectorstore is not None:
-            _rag._vectorstore = _vectorstore
+    global _rag
+    # RAG is already initialized at startup, just return it
     return _rag
 
 def get_vectorstore():

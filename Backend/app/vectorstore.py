@@ -82,9 +82,20 @@ class VectorStore:
         return results
 
     def clear_collection(self):
-        results = self.collection.get()
-        if results and results["ids"]:
-            self.collection.delete(ids=results["ids"])
+        # Delete the collection entirely and recreate it fresh
+        try:
+            self.client.delete_collection(name="medical_docs")
+            logger.info("Deleted existing collection")
+        except Exception as e:
+            logger.info(f"Collection may not exist, proceeding to create: {e}")
+        
+        # Create a new empty collection
+        self.collection = self.client.get_or_create_collection(
+            name="medical_docs",
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=self.embedding_function
+        )
+        logger.info("Created new empty collection")
 
     def list_sources(self):
         results = self.collection.get(include=["metadatas"])

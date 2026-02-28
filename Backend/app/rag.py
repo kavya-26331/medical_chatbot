@@ -2,15 +2,17 @@ from .vectorstore import VectorStore
 from .utils import chunk_text
 
 class RAG:
-    def __init__(self, vectorstore=None):
-        """Initialize RAG with optional pre-loaded vectorstore."""
-        self._vectorstore = vectorstore
+    def __init__(self, vectorstore: VectorStore = None):
+        # Accept vectorstore as parameter (passed from main.py at startup)
+        # Fallback to creating a new one if not provided (for backward compatibility)
+        if vectorstore is None:
+            self._vectorstore = VectorStore()
+        else:
+            self._vectorstore = vectorstore
 
     @property
     def vectorstore(self):
-        """Lazy load VectorStore only when accessed."""
-        if self._vectorstore is None:
-            self._vectorstore = VectorStore()
+        """Return the vectorstore instance."""
         return self._vectorstore
 
     def ingest_document(self, text: str, source_name: str):
