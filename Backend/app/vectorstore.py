@@ -3,27 +3,36 @@ from chromadb.utils import embedding_functions
 import os
 import uuid
 import logging
+import tempfile
 
 logger = logging.getLogger(__name__)
 
 class VectorStore:
+    # Class-level model cache to avoid reloading
+    _embedding_function = None
 
     def __init__(self):
         logger.info("Initializing VectorStore...")
         try:
-            chroma_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
-            logger.info(f"ChromaDB path: {chroma_path}")
+            # Create a unique path for each instance using PID
+            self.persist_directory = os.path.join(tempfile.gettempdir(), f"chroma_db_{os.getpid()}")
+            logger.info(f"Using ChromaDB path: {self.persist_directory}")
 
             # Use PersistentClient for data persistence
-            self.client = chromadb.PersistentClient(path=chroma_path)
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
             logger.info("Using PersistentClient for ChromaDB")
 
-            # Use SentenceTransformer embedding function
-            # This loads the model and may take time on first call
-            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2"
-            )
-            logger.info("Using SentenceTransformer embedding function (all-MiniLM-L6-v2)")
+            # Lazy load the embedding function (class-level cache)
+            if VectorStore._embedding_function is None:
+                logger.info("Loading SentenceTransformer model...")
+                VectorStore._embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                    model_name="all-MiniLM-L6-v2"
+                )
+                logger.info("✅ SentenceTransformer model loaded and cached")
+            else:
+                logger.info("Using cached SentenceTransformer model")
+            
+            self.embedding_function = VectorStore._embedding_function
 
             # Get or create collection - DON'T delete at startup
             self.collection = self.client.get_or_create_collection(

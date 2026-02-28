@@ -3,8 +3,10 @@ import sys
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
 from .llm import LLM
 from .rag import RAG
 
@@ -31,7 +33,10 @@ async def lifespan(app: FastAPI):
     global _vectorstore, _llm, _rag
     
     # Startup - Initialize VectorStore ONCE here
+    print("="*50)
     print("Application starting up...")
+    print(f"Time: {datetime.now()}")
+    print("="*50)
     print("Pre-loading VectorStore and embedding model...")
     
     try:
@@ -101,24 +106,40 @@ def root():
 @app.get("/debug-methods")
 def debug_methods():
     """Debug endpoint to verify deployment version"""
-    return {"clear_route_methods": ["GET", "POST"], "version": "startup-loaded-v1"}
+    global _vectorstore
+    vectorstore_status = "loaded" if _vectorstore is not None else "not loaded"
+    return {
+        "clear_route_methods": ["GET", "POST"], 
+        "version": "startup-loaded-v2",
+        "vectorstore_status": vectorstore_status
+    }
 
 @app.get("/clear")
 def clear_db_get():
     """Clear the vector database using GET method"""
+    print(f"[{datetime.now()}] GET /clear request received")
     try:
         get_vectorstore().clear_collection()
+        print(f"[{datetime.now()}] Vector DB cleared (GET)")
         return {"status": "success", "message": "Vector DB cleared (GET)!"}
     except Exception as e:
+        print(f"[{datetime.now()}] Error in GET /clear: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return {"status": "error", "message": f"Error: {str(e)}"}
 
 @app.post("/clear")
 def clear_db():
     """Clear the vector database using POST method"""
+    print(f"[{datetime.now()}] POST /clear request received")
     try:
         get_vectorstore().clear_collection()
+        print(f"[{datetime.now()}] Vector DB cleared (POST)")
         return {"status": "success", "message": "Vector DB cleared (POST)!"}
     except Exception as e:
+        print(f"[{datetime.now()}] Error in POST /clear: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return {"status": "error", "message": f"Error: {str(e)}"}
 
 @app.get("/list_sources")
@@ -134,6 +155,7 @@ async def upload_doc(
     file: UploadFile = File(...),
     source_name: str = Form(...)
 ):
+    print(f"[{datetime.now()}] POST /upload_doc request received for: {source_name}")
     try:
         logger.info(f"Starting ingestion for file: {source_name}")
         
@@ -175,9 +197,12 @@ async def upload_doc(
 #  CHAT ROUTE
 # ------------------------
 @app.post("/chat")
-async def chat(payload: dict):
+async def chat(request: Request):
+    print(f"[{datetime.now()}] POST /chat request received")
     try:
+        payload = await request.json()
         query = payload.get("query", "")
+        print(f"Query: {query}")
 
         # Classify query as medical or not
         medical_keywords = ["patient", "symptom", "diagnosis", "treatment", "medical", "health", "doctor", "medicine"]
@@ -190,18 +215,26 @@ async def chat(payload: dict):
             }
 
         # Use pre-loaded RAG with pre-loaded vectorstore
+        print("Retrieving context...")
         context, sources = get_rag().retrieve_context(query)
+        print(f"Context retrieved, sources: {sources}")
+        
+        print("Generating answer...")
         answer = get_llm().generate_answer(query, context)
+        print(f"Answer generated")
 
         return {
             "answer": answer,
             "sources": sources
         }
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {type(e).__name__}: {str(e)}")
+        print(f"[{datetime.now()}] Error in POST /chat: {type(e).__name__}: {e}")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return {
-            "answer": f"An error occurred: {str(e)}",
-            "sources": []
-        }
+        print(f"Traceback: {traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "answer": f"An error occurred: {str(e)}",
+                "sources": []
+            }
+        )
