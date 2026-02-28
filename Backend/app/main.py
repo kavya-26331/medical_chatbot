@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,21 +16,48 @@ logger = logging.getLogger(__name__)
 print(f"Python version: {sys.version}")
 print(f"PORT environment variable: {os.getenv('PORT', 'NOT SET')}")
 
+# Cache the model files to avoid re-downloading on every deploy
+os.environ["HF_HOME"] = os.environ.get("HF_HOME", "/tmp/huggingface")
+print(f"HF_HOME set to: {os.environ['HF_HOME']}")
+
 # Lazy initialization to reduce memory usage at startup
 _llm = None
 _rag = None
+_vectorstore = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
-    # Startup - nothing heavy here to avoid OOM at startup
+    global _vectorstore, _llm, _rag
+    
+    # Startup - Initialize VectorStore ONCE here
     print("Application starting up...")
-    yield
-    # Shutdown - cleanup resources
-    global _llm, _rag
-    _llm = None
-    _rag = None
-    print("Application shutting down...")
+    print("Pre-loading VectorStore and embedding model...")
+    
+    try:
+        from .vectorstore import VectorStore
+        _vectorstore = VectorStore()
+        print("✅ VectorStore loaded successfully at startup")
+    except Exception as e:
+        print(f"❌ Error loading VectorStore at startup: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+    
+    try:
+        yield
+    except asyncio.CancelledError:
+        print("Application received cancellation signal...")
+        raise
+    except KeyboardInterrupt:
+        print("Application received keyboard interrupt...")
+        raise
+    finally:
+        # Shutdown - cleanup resources
+        global _llm, _rag
+        _llm = None
+        _rag = None
+        _vectorstore = None
+        print("Application shutting down...")
 
 app = FastAPI(title="Medical Chatbot API", lifespan=lifespan)
 
@@ -40,10 +68,23 @@ def get_llm():
     return _llm
 
 def get_rag():
-    global _rag
+    """Get or create RAG instance with pre-loaded vectorstore."""
+    global _rag, _vectorstore
     if _rag is None:
+        from .rag import RAG
         _rag = RAG()
+        # Use the pre-loaded vectorstore
+        if _vectorstore is not None:
+            _rag._vectorstore = _vectorstore
     return _rag
+
+def get_vectorstore():
+    """Get the pre-loaded vectorstore."""
+    global _vectorstore
+    if _vectorstore is None:
+        from .vectorstore import VectorStore
+        _vectorstore = VectorStore()
+    return _vectorstore
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,13 +101,13 @@ def root():
 @app.get("/debug-methods")
 def debug_methods():
     """Debug endpoint to verify deployment version"""
-    return {"clear_route_methods": ["GET", "POST"], "version": "debug-enabled-v2"}
+    return {"clear_route_methods": ["GET", "POST"], "version": "startup-loaded-v1"}
 
 @app.get("/clear")
 def clear_db_get():
     """Clear the vector database using GET method"""
     try:
-        get_rag().vectorstore.clear_collection()
+        get_vectorstore().clear_collection()
         return {"status": "success", "message": "Vector DB cleared (GET)!"}
     except Exception as e:
         return {"status": "error", "message": f"Error: {str(e)}"}
@@ -75,14 +116,14 @@ def clear_db_get():
 def clear_db():
     """Clear the vector database using POST method"""
     try:
-        get_rag().vectorstore.clear_collection()
+        get_vectorstore().clear_collection()
         return {"status": "success", "message": "Vector DB cleared (POST)!"}
     except Exception as e:
         return {"status": "error", "message": f"Error: {str(e)}"}
 
 @app.get("/list_sources")
 def list_sources():
-    sources = get_rag().vectorstore.list_sources()
+    sources = get_vectorstore().list_sources()
     return {"sources": sources}
 
 # ------------------------
@@ -117,7 +158,7 @@ async def upload_doc(
         # Log text preview
         logger.info(f"Text decoded, length: {len(text)} characters, preview: {text[:100]}...")
 
-        # Ingest the document
+        # Ingest the document using pre-loaded vectorstore
         logger.info("Calling get_rag().ingest_document()")
         get_rag().ingest_document(text, source_name)
         logger.info(f"Successfully ingested {source_name}")
@@ -148,6 +189,7 @@ async def chat(payload: dict):
                 "sources": []
             }
 
+        # Use pre-loaded RAG with pre-loaded vectorstore
         context, sources = get_rag().retrieve_context(query)
         answer = get_llm().generate_answer(query, context)
 
@@ -156,6 +198,9 @@ async def chat(payload: dict):
             "sources": sources
         }
     except Exception as e:
+        logger.error(f"Error in chat endpoint: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return {
             "answer": f"An error occurred: {str(e)}",
             "sources": []

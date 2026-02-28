@@ -2,9 +2,9 @@ from .vectorstore import VectorStore
 from .utils import chunk_text
 
 class RAG:
-    def __init__(self):
-        # Lazy initialization - VectorStore will be created on first use
-        self._vectorstore = None
+    def __init__(self, vectorstore=None):
+        """Initialize RAG with optional pre-loaded vectorstore."""
+        self._vectorstore = vectorstore
 
     @property
     def vectorstore(self):

@@ -19,3 +19,6 @@ Backend/Backend/chroma_db/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Streamlit secrets (do not commit to version control)
+Frontend/.streamlit/
