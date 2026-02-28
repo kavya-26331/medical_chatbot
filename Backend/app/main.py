@@ -57,15 +57,33 @@ app.add_middleware(
 def root():
     return {"status": "running"}
 
+@app.get("/debug-methods")
+def debug_methods():
+    """Debug endpoint to verify deployment version"""
+    return {"clear_route_methods": ["GET", "POST"], "version": "debug-enabled-v2"}
+
+@app.get("/clear")
+def clear_db_get():
+    """Clear the vector database using GET method"""
+    try:
+        get_rag().vectorstore.clear_collection()
+        return {"status": "success", "message": "Vector DB cleared (GET)!"}
+    except Exception as e:
+        return {"status": "error", "message": f"Error: {str(e)}"}
+
+@app.post("/clear")
+def clear_db():
+    """Clear the vector database using POST method"""
+    try:
+        get_rag().vectorstore.clear_collection()
+        return {"status": "success", "message": "Vector DB cleared (POST)!"}
+    except Exception as e:
+        return {"status": "error", "message": f"Error: {str(e)}"}
+
 @app.get("/list_sources")
 def list_sources():
     sources = get_rag().vectorstore.list_sources()
     return {"sources": sources}
-
-@app.post("/clear")
-def clear_db():
-    get_rag().vectorstore.clear_collection()
-    return {"message": "Vector DB cleared!"}
 
 # ------------------------
 #  INGEST ROUTE
