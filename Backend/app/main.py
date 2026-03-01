@@ -31,17 +31,13 @@ _vectorstore = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
-    # Startup - Load vectorstore here at startup (not lazy!)
-    # This ensures model loads once when memory is available
-    print("Application starting up (loading VectorStore at startup)...")
-    global _vectorstore
-    from .vectorstore import VectorStore
-    _vectorstore = VectorStore()
-    print("✅ VectorStore loaded at startup")
+    # Startup - DON'T load vectorstore here (causes OOM on Render)
+    # Instead, lazy load on first request
+    print("Application starting up (VectorStore will load on first request)...")
     
     yield
     # Shutdown - cleanup resources
-    global _llm, _rag
+    global _llm, _rag, _vectorstore
     _llm = None
     _rag = None
     _vectorstore = None
@@ -65,6 +61,9 @@ def get_rag():
 def get_vectorstore():
     """Get the pre-loaded vectorstore."""
     global _vectorstore
+    if _vectorstore is None:
+        from .vectorstore import VectorStore
+        _vectorstore = VectorStore()
     return _vectorstore
 
 app.add_middleware(
